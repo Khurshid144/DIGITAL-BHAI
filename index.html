@@ -762,5 +762,320 @@
 })();
 </script>
 
+
+<div id="dbFeatureModal" class="fixed inset-0 z-[60] hidden items-center justify-center bg-slate-950/60 p-4">
+  <section class="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+    <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+      <div><h2 id="dbFeatureTitle" class="text-xl font-bold text-slate-900">Digital Bhai</h2><p id="dbFeatureSubtitle" class="mt-1 text-sm text-slate-500">Manage your shop</p></div>
+      <button type="button" id="dbFeatureClose" class="rounded-lg px-3 py-2 text-slate-500 hover:bg-slate-100" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div id="dbFeatureContent" class="overflow-y-auto p-5"></div>
+  </section>
+</div>
+<div id="dbGlobalToast" class="fixed bottom-5 left-1/2 z-[100] hidden -translate-x-1/2 rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white shadow-xl" role="status"></div>
+
+<script>
+(function () {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const WORK_KEY = 'digitalBhaiWorks_v1';
+  const PAY_KEY = 'digitalBhaiPayments_v1';
+  const SETTINGS_KEY = 'digitalBhaiSettings_v1';
+  const modal = $('dbFeatureModal');
+  const content = $('dbFeatureContent');
+  let toastTimer;
+
+  const services = [
+    {name:'जाति प्रमाण पत्र', en:'Caste Certificate', category:'Certificates'},
+    {name:'आवास प्रमाण पत्र', en:'Residence Certificate', category:'Certificates'},
+    {name:'आय प्रमाण पत्र', en:'Income Certificate', category:'Certificates'},
+    {name:'EWS प्रमाण पत्र', en:'EWS Certificate', category:'Certificates'},
+    {name:'NSP Scholarship', en:'Scholarship Form', category:'Scholarship'},
+    {name:'Job Apply', en:'Government / Private Jobs', category:'Jobs'},
+    {name:'Admit Card', en:'Download / Print', category:'Education'},
+    {name:'College Admission', en:'Online Form', category:'Education'},
+    {name:'Print / Scan', en:'B&W / Colour', category:'Documents'},
+    {name:'PDF Tools', en:'Merge / Compress', category:'Documents'},
+    {name:'PAN / Aadhaar', en:'Apply / Correction', category:'Documents'},
+    {name:'Other Services', en:'Other customer requests', category:'Other'}
+  ];
+  const portalUrls = {
+    'RTPS Bihar':'https://serviceonline.bihar.gov.in/',
+    'NSP Portal':'https://scholarships.gov.in/',
+    'Aadhaar':'https://uidai.gov.in/',
+    'PM Kisan':'https://pmkisan.gov.in/',
+    'Sarkari Result':'https://www.sarkariresult.com/',
+    'DigiLocker':'https://www.digilocker.gov.in/'
+  };
+  function read(key) {
+    try { const v = JSON.parse(localStorage.getItem(key) || '[]'); return Array.isArray(v) ? v : []; }
+    catch (_) { return []; }
+  }
+  function write(key, value) { localStorage.setItem(key, JSON.stringify(value)); }
+  function esc(v) { return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function notify(msg) {
+    const t = $('dbGlobalToast');
+    t.textContent = msg; t.classList.remove('hidden');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.add('hidden'), 3200);
+  }
+  function openFeature(title, subtitle, body) {
+    $('dbFeatureTitle').textContent = title;
+    $('dbFeatureSubtitle').textContent = subtitle || '';
+    content.innerHTML = body;
+    modal.classList.remove('hidden'); modal.classList.add('flex');
+  }
+  function closeFeature() { modal.classList.add('hidden'); modal.classList.remove('flex'); }
+  $('dbFeatureClose').addEventListener('click', closeFeature);
+  modal.addEventListener('click', e => { if (e.target === modal) closeFeature(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeFeature(); });
+
+  function updateStats() {
+    const customers = JSON.parse(localStorage.getItem('digitalBhaiCustomers_v1') || '[]');
+    const works = read(WORK_KEY), payments = read(PAY_KEY);
+    const today = new Date().toLocaleDateString('en-IN', {timeZone:'Asia/Kolkata'});
+    const todayCustomers = customers.filter(c => c.createdAt === today).length;
+    const processing = works.filter(w => w.status === 'Processing').length;
+    const completed = works.filter(w => w.status === 'Completed').length;
+    const pending = works.filter(w => w.status === 'Pending' || w.status === 'Action Required').length;
+    const collection = payments.filter(p => p.date === today).reduce((sum,p) => sum + Number(p.amount || 0), 0);
+    if ($('metricCustomers')) $('metricCustomers').textContent = todayCustomers;
+    if ($('metricWorks')) $('metricWorks').textContent = works.length;
+    if ($('metricProcessing')) $('metricProcessing').textContent = processing;
+    if ($('metricCompleted')) $('metricCompleted').textContent = completed;
+    if ($('metricPending')) $('metricPending').textContent = pending;
+    if ($('metricCollection')) $('metricCollection').textContent = '₹' + collection.toLocaleString('en-IN');
+    const body = $('todayWorkBody');
+    if (body) body.innerHTML = works.length ? works.slice().reverse().slice(0,50).map(w => {
+      const color = w.status === 'Completed' ? 'bg-green-100 text-green-800' : w.status === 'Pending' || w.status === 'Action Required' ? 'bg-red-100 text-red-800' : 'bg-orange-100 text-orange-800';
+      return `<tr><td class="px-2 py-3 text-xs font-mono text-slate-500">${esc(w.id)}</td><td class="px-2 py-3"><p class="font-medium text-slate-800 text-xs">${esc(w.customer)}</p><p class="text-[10px] text-slate-500">${esc(w.service)}</p></td><td class="px-2 py-3 text-center"><button data-work-status="${esc(w.id)}" class="inline-flex rounded px-2 py-1 text-[10px] font-semibold ${color}" title="Click to change status">${esc(w.status)}</button></td></tr>`;
+    }).join('') : '<tr><td colspan="3" class="px-3 py-8 text-center text-slate-400">No work entries yet. Click “Create Work” to add your first entry.</td></tr>';
+    const tabs = document.querySelectorAll('[data-work-filter]');
+    tabs.forEach(b => {
+      const f = b.dataset.workFilter;
+      const count = f === 'All' ? works.length : works.filter(w => w.status === f).length;
+      b.textContent = `${f} (${count})`;
+    });
+  }
+
+  function workForm(prefill='') {
+    const customers = (() => { try { return JSON.parse(localStorage.getItem('digitalBhaiCustomers_v1') || '[]'); } catch (_) { return []; } })();
+    const options = customers.map(c => `<option value="${esc(c.name)}">${esc(c.name)} — ${esc(c.mobile)}</option>`).join('');
+    openFeature('Create Work', 'Record a customer service request and track its status.', `
+      <form id="dbWorkForm" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <label class="text-sm font-semibold text-slate-700">Customer name <span class="text-red-500">*</span><input name="customer" list="dbCustomerOptions" required class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal" placeholder="Select or enter customer"></label>
+        <datalist id="dbCustomerOptions">${options}</datalist>
+        <label class="text-sm font-semibold text-slate-700">Service <span class="text-red-500">*</span><input name="service" required value="${esc(prefill)}" list="dbServiceOptions" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal" placeholder="e.g. Caste Certificate"><datalist id="dbServiceOptions">${services.map(s=>`<option value="${esc(s.name)}">`).join('')}</datalist></label>
+        <label class="text-sm font-semibold text-slate-700">Service charge (₹)<input name="charge" type="number" min="0" step="0.01" value="0" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal"></label>
+        <label class="text-sm font-semibold text-slate-700">Status<select name="status" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal"><option>Pending</option><option selected>Processing</option><option>Completed</option><option>Action Required</option></select></label>
+        <label class="text-sm font-semibold text-slate-700 sm:col-span-2">Notes (optional)<textarea name="notes" rows="2" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal" placeholder="Documents needed, deadline, etc."></textarea></label>
+        <div class="sm:col-span-2 flex justify-end gap-2"><button type="button" data-close-feature class="rounded-lg bg-slate-100 px-4 py-2.5 font-semibold text-slate-700">Cancel</button><button class="rounded-lg bg-blue-600 px-5 py-2.5 font-semibold text-white"><i class="fa-solid fa-floppy-disk mr-2"></i>Save Work</button></div>
+      </form>`);
+    $('dbWorkForm').addEventListener('submit', e => {
+      e.preventDefault(); const f = new FormData(e.currentTarget);
+      const works = read(WORK_KEY);
+      const id = 'DBW-' + String(Date.now()).slice(-7);
+      works.push({id, customer:String(f.get('customer')).trim(), service:String(f.get('service')).trim(), charge:Number(f.get('charge')||0), status:String(f.get('status')), notes:String(f.get('notes')||'').trim(), date:new Date().toLocaleDateString('en-IN',{timeZone:'Asia/Kolkata'})});
+      write(WORK_KEY, works); closeFeature(); updateStats(); notify('Work saved: ' + id);
+    });
+  }
+
+  function workManagement() {
+    const works = read(WORK_KEY);
+    openFeature('Work Management', 'View all service requests and update their status.', `
+      <div class="mb-4 flex flex-wrap gap-2"><input id="dbWorkSearch" class="min-w-[200px] flex-1 rounded-lg border border-slate-300 px-3 py-2" placeholder="Search work ID, customer, service"><button id="dbCreateWork" class="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white"><i class="fa-solid fa-plus mr-1"></i>Create Work</button><button id="dbExportWorks" class="rounded-lg bg-slate-100 px-4 py-2 font-semibold text-slate-700">Export CSV</button></div>
+      <div class="overflow-auto"><table class="w-full min-w-[680px] text-left text-sm"><thead class="bg-slate-50 text-xs uppercase text-slate-500"><tr><th class="p-3">Work ID</th><th class="p-3">Customer / Service</th><th class="p-3">Charge</th><th class="p-3">Date</th><th class="p-3">Status</th></tr></thead><tbody id="dbWorkTableBody" class="divide-y divide-slate-100"></tbody></table></div>
+      <p id="dbWorkEmpty" class="hidden py-8 text-center text-slate-400">No work records yet.</p>`);
+    function render(q='') {
+      const filtered = read(WORK_KEY).slice().reverse().filter(w => [w.id,w.customer,w.service,w.status].some(v=>String(v||'').toLowerCase().includes(q.toLowerCase())));
+      $('dbWorkTableBody').innerHTML = filtered.map(w=>`<tr><td class="p-3 font-mono text-xs">${esc(w.id)}</td><td class="p-3"><strong>${esc(w.customer)}</strong><div class="text-xs text-slate-500">${esc(w.service)}</div></td><td class="p-3">₹${Number(w.charge||0).toLocaleString('en-IN')}</td><td class="p-3">${esc(w.date)}</td><td class="p-3"><select data-change-work="${esc(w.id)}" class="rounded border border-slate-300 p-1"><option ${w.status==='Pending'?'selected':''}>Pending</option><option ${w.status==='Processing'?'selected':''}>Processing</option><option ${w.status==='Completed'?'selected':''}>Completed</option><option ${w.status==='Action Required'?'selected':''}>Action Required</option></select></td></tr>`).join('');
+      $('dbWorkEmpty').classList.toggle('hidden', filtered.length>0);
+    }
+    render();
+    $('dbWorkSearch').addEventListener('input',e=>render(e.target.value));
+    $('dbCreateWork').addEventListener('click',()=>workForm());
+    $('dbExportWorks').addEventListener('click',()=>downloadCSV('digital-bhai-works.csv',read(WORK_KEY)));
+  }
+
+  function downloadCSV(filename, rows) {
+    if (!rows.length) { notify('No records to export yet.'); return; }
+    const keys = [...new Set(rows.flatMap(r=>Object.keys(r)))];
+    const csv = [keys.join(','), ...rows.map(r=>keys.map(k=>'"'+String(r[k]??'').replace(/"/g,'""')+'"').join(','))].join('\r\n');
+    const url = URL.createObjectURL(new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'}));
+    const a=document.createElement('a'); a.href=url; a.download=filename; a.click(); URL.revokeObjectURL(url);
+  }
+
+  function billing() {
+    const payments=read(PAY_KEY);
+    openFeature('Payments & Billing','Record payments and export your collection ledger.',`
+      <form id="dbPaymentForm" class="mb-6 grid grid-cols-1 gap-3 rounded-xl bg-slate-50 p-4 sm:grid-cols-4">
+        <label class="text-sm font-semibold">Customer<input name="customer" required class="mt-1 w-full rounded-lg border border-slate-300 p-2 font-normal" placeholder="Customer name"></label>
+        <label class="text-sm font-semibold">Work / Service<input name="service" required class="mt-1 w-full rounded-lg border border-slate-300 p-2 font-normal" placeholder="Service"></label>
+        <label class="text-sm font-semibold">Amount (₹)<input name="amount" type="number" min="0.01" step="0.01" required class="mt-1 w-full rounded-lg border border-slate-300 p-2 font-normal" placeholder="0.00"></label>
+        <label class="text-sm font-semibold">Payment mode<select name="mode" class="mt-1 w-full rounded-lg border border-slate-300 p-2 font-normal"><option>Cash</option><option>UPI</option><option>Card</option><option>Bank Transfer</option><option>Other</option></select></label>
+        <div class="sm:col-span-4 flex justify-end"><button class="rounded-lg bg-blue-600 px-5 py-2.5 font-semibold text-white">Record Payment</button></div>
+      </form>
+      <div class="mb-3 flex items-center justify-between gap-2"><h3 class="font-bold">Payment ledger</h3><button id="dbExportPayments" class="rounded-lg bg-slate-100 px-3 py-2 text-sm font-semibold">Export CSV</button></div>
+      <div class="overflow-auto"><table class="w-full min-w-[600px] text-left text-sm"><thead class="bg-slate-50 text-xs uppercase text-slate-500"><tr><th class="p-3">Receipt ID</th><th class="p-3">Customer / Service</th><th class="p-3">Date</th><th class="p-3">Mode</th><th class="p-3 text-right">Amount</th></tr></thead><tbody class="divide-y divide-slate-100">${payments.slice().reverse().map(p=>`<tr><td class="p-3 font-mono text-xs">${esc(p.id)}</td><td class="p-3">${esc(p.customer)}<div class="text-xs text-slate-500">${esc(p.service)}</div></td><td class="p-3">${esc(p.date)}</td><td class="p-3">${esc(p.mode)}</td><td class="p-3 text-right font-semibold">₹${Number(p.amount).toLocaleString('en-IN')}</td></tr>`).join('') || '<tr><td colspan="5" class="p-8 text-center text-slate-400">No payments recorded yet.</td></tr>'}</tbody></table></div>`);
+    $('dbPaymentForm').addEventListener('submit',e=>{
+      e.preventDefault();const f=new FormData(e.currentTarget);const amount=Number(f.get('amount'));
+      if(!(amount>0)){notify('Enter a payment amount greater than zero.');return;}
+      const rows=read(PAY_KEY);rows.push({id:'DBR-'+String(Date.now()).slice(-7),customer:String(f.get('customer')).trim(),service:String(f.get('service')).trim(),amount,mode:String(f.get('mode')),date:new Date().toLocaleDateString('en-IN',{timeZone:'Asia/Kolkata'})});write(PAY_KEY,rows);closeFeature();updateStats();notify('Payment recorded.');
+    });
+    $('dbExportPayments').addEventListener('click',()=>downloadCSV('digital-bhai-payments.csv',read(PAY_KEY)));
+  }
+
+  function reports() {
+    const customers = (()=>{try{return JSON.parse(localStorage.getItem('digitalBhaiCustomers_v1')||'[]')}catch(_){return[]}})();
+    const works=read(WORK_KEY), pays=read(PAY_KEY);
+    const total=pays.reduce((s,p)=>s+Number(p.amount||0),0);
+    openFeature('Reports','Summary from records saved in this browser.',`
+      <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
+        ${[['Customers',customers.length],['Total Work',works.length],['Completed Work',works.filter(w=>w.status==='Completed').length],['Total Payments','₹'+total.toLocaleString('en-IN')]].map(x=>`<div class="rounded-xl border border-slate-200 p-4"><p class="text-sm text-slate-500">${x[0]}</p><p class="mt-1 text-2xl font-bold text-slate-900">${x[1]}</p></div>`).join('')}
+      </div>
+      <div class="mt-5 flex flex-wrap gap-2"><button id="dbExportCustomers" class="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white">Export Customers CSV</button><button id="dbExportWorksReport" class="rounded-lg bg-slate-100 px-4 py-2 font-semibold">Export Work CSV</button><button id="dbExportPaymentsReport" class="rounded-lg bg-slate-100 px-4 py-2 font-semibold">Export Payments CSV</button><button id="dbBackupAll" class="rounded-lg bg-slate-100 px-4 py-2 font-semibold">Download Full Backup</button></div>
+      <p class="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Reports include only records stored in this browser. This is not a cloud/shared database.</p>`);
+    $('dbExportCustomers').onclick=()=>downloadCSV('digital-bhai-customers.csv',customers);
+    $('dbExportWorksReport').onclick=()=>downloadCSV('digital-bhai-works.csv',read(WORK_KEY));
+    $('dbExportPaymentsReport').onclick=()=>downloadCSV('digital-bhai-payments.csv',read(PAY_KEY));
+    $('dbBackupAll').onclick=()=>{const blob=new Blob([JSON.stringify({customers,works:read(WORK_KEY),payments:read(PAY_KEY),settings:readSettings()},null,2)],{type:'application/json'});const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download='digital-bhai-backup.json';a.click();URL.revokeObjectURL(u);};
+  }
+
+  function readSettings() { try{return JSON.parse(localStorage.getItem(SETTINGS_KEY)||'{}')}catch(_){return{}} }
+  function settings() {
+    const s=readSettings();
+    openFeature('Shop Settings','These details are saved in this browser only.',`
+      <form id="dbSettingsForm" class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <label class="text-sm font-semibold">Shop name<input name="shopName" value="${esc(s.shopName||'Digital Bhai')}" required class="mt-1 w-full rounded-lg border border-slate-300 p-2.5 font-normal"></label>
+        <label class="text-sm font-semibold">Owner name<input name="owner" value="${esc(s.owner||'Khurshid')}" required class="mt-1 w-full rounded-lg border border-slate-300 p-2.5 font-normal"></label>
+        <label class="text-sm font-semibold">Support WhatsApp number<input name="whatsapp" value="${esc(s.whatsapp||'')}" inputmode="numeric" maxlength="15" class="mt-1 w-full rounded-lg border border-slate-300 p-2.5 font-normal" placeholder="Country code + number"></label>
+        <label class="text-sm font-semibold">Shop phone<input name="phone" value="${esc(s.phone||'')}" class="mt-1 w-full rounded-lg border border-slate-300 p-2.5 font-normal"></label>
+        <label class="text-sm font-semibold sm:col-span-2">Shop address<input name="address" value="${esc(s.address||'')}" class="mt-1 w-full rounded-lg border border-slate-300 p-2.5 font-normal"></label>
+        <div class="sm:col-span-2 flex justify-end"><button class="rounded-lg bg-blue-600 px-5 py-2.5 font-semibold text-white">Save Settings</button></div>
+      </form>
+      <div class="mt-5 border-t border-slate-200 pt-4"><h3 class="font-bold">Data backup & restore</h3><p class="my-2 text-sm text-slate-500">Export a backup before clearing browser data. Restore only a JSON backup generated by this dashboard.</p><div class="flex flex-wrap gap-2"><button id="dbBackupSettings" class="rounded-lg bg-slate-100 px-4 py-2 font-semibold">Download Backup</button><label class="cursor-pointer rounded-lg bg-slate-100 px-4 py-2 font-semibold">Restore Backup<input id="dbRestoreFile" type="file" accept="application/json,.json" class="hidden"></label></div></div>`);
+    $('dbSettingsForm').addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.currentTarget);write(SETTINGS_KEY,Object.fromEntries(f.entries()));notify('Shop settings saved on this browser.');});
+    $('dbBackupSettings').onclick=()=>{const payload={customers:(()=>{try{return JSON.parse(localStorage.getItem('digitalBhaiCustomers_v1')||'[]')}catch(_){return[]}})(),works:read(WORK_KEY),payments:read(PAY_KEY),settings:readSettings()};const u=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=u;a.download='digital-bhai-backup.json';a.click();URL.revokeObjectURL(u);};
+    $('dbRestoreFile').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;try{const data=JSON.parse(await file.text());if(!confirm('Restore backup? Existing customer/work/payment data in this browser will be replaced.'))return;if(!Array.isArray(data.customers)||!Array.isArray(data.works)||!Array.isArray(data.payments))throw new Error('Backup format is not recognized.');localStorage.setItem('digitalBhaiCustomers_v1',JSON.stringify(data.customers));write(WORK_KEY,data.works);write(PAY_KEY,data.payments);localStorage.setItem(SETTINGS_KEY,JSON.stringify(data.settings||{}));notify('Backup restored.');closeFeature();updateStats();}catch(err){notify('Could not restore backup: '+err.message);}});
+  }
+
+  function servicePage(title, category) {
+    const list=services.filter(s=>!category || category==='All' || s.category===category || (category==='Government' && s.category==='Certificates'));
+    openFeature(title,'Choose a service to create a work entry.',`
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">${list.map(s=>`<button data-service-start="${esc(s.name)}" class="rounded-xl border border-slate-200 p-4 text-left hover:border-blue-400 hover:bg-blue-50"><p class="font-bold text-slate-800">${esc(s.name)}</p><p class="mt-1 text-sm text-slate-500">${esc(s.en)}</p><span class="mt-3 inline-flex text-xs font-semibold text-blue-600">Create work <i class="fa-solid fa-arrow-right ml-1"></i></span></button>`).join('')}</div>
+      <p class="mt-4 text-xs text-slate-500">Official applications must be completed on the relevant government/organization portal. This dashboard records and tracks the service; it does not submit applications on your behalf.</p>`);
+  }
+
+  function handleNav(label) {
+    if (label==='Dashboard') { closeFeature(); window.scrollTo({top:0,behavior:'smooth'}); return; }
+    if (label==='New Customer') { const el=document.querySelector('aside a'); /* handled by existing customer script */ const candidate=document.querySelector('aside a[href="#new-customer"]'); if(candidate){candidate.click();return;} notify('Use the New Customer form from the sidebar.'); return; }
+    if (label==='Customer List') { const candidate=document.querySelector('aside a[href="#customer-list"]'); if(candidate){candidate.click();return;} notify('Open Customer List from the sidebar.'); return; }
+    if (label==='Work Management') { workManagement(); return; }
+    if (label==='Payments & Billing') { billing(); return; }
+    if (label==='Reports') { reports(); return; }
+    if (label==='Shop Settings') { settings(); return; }
+    if (label==='Govt Services') { servicePage(label,'Government'); return; }
+    if (label==='Scholarships') { servicePage(label,'Scholarship'); return; }
+    if (label==='Jobs & Career') { servicePage(label,'Jobs'); return; }
+    if (label==='Certificates (RTPS)') { servicePage(label,'Certificates'); return; }
+    if (label==='Print & Scan') { servicePage(label,'Documents'); return; }
+    servicePage(label,'All');
+  }
+
+  // Sidebar navigation: every menu item routes to a working local module.
+  document.querySelectorAll('aside a').forEach(a=>{
+    const label=a.innerText.trim().replace(/\s+/g,' ');
+    if (label && !['Customer Support'].includes(label)) {
+      a.addEventListener('click',e=>{
+        if (label.startsWith('View All')) return;
+        if (portalUrls[label]) return;
+        e.preventDefault(); handleNav(label);
+      });
+    }
+  });
+
+  // Create work / quick entry buttons.
+  document.querySelectorAll('button').forEach(b=>{
+    const label=b.innerText.trim().replace(/\s+/g,' ');
+    if(label==='Create Work') b.addEventListener('click',()=>workForm());
+    if(label==='Quick Entry') b.addEventListener('click',()=>workForm());
+    if(label==='Customer Support') b.addEventListener('click',()=>{
+      const s=readSettings(), number=String(s.whatsapp||'').replace(/\D/g,'');
+      if(number.length>=10) window.open('https://wa.me/'+number,'_blank','noopener');
+      else openFeature('Customer Support','Set your WhatsApp number in Shop Settings first.',`<p class="text-sm text-slate-600">WhatsApp support is not configured yet.</p><button id="dbOpenSettingsFromSupport" class="mt-4 rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white">Open Shop Settings</button>`);
+      const btn=$('dbOpenSettingsFromSupport'); if(btn) btn.onclick=settings;
+    });
+  });
+
+  // Service tiles and category filters.
+  document.querySelectorAll('button').forEach(b=>{
+    const label=b.innerText.trim().replace(/\s+/g,' ');
+    const match=services.find(s=>label.startsWith(s.name) || label.includes(s.en));
+    if(match) b.addEventListener('click',()=>workForm(match.name));
+  });
+  const filterButtons=[...document.querySelectorAll('button')].filter(b=>['All Services','Government','Scholarship','Jobs','Education','Certificates','Documents','Other'].includes(b.innerText.trim()));
+  filterButtons.forEach(b=>b.addEventListener('click',()=>{
+    const category=b.innerText.trim();
+    filterButtons.forEach(x=>x.className=x===b?'px-4 py-1.5 bg-blue-600 text-white text-sm font-medium rounded-full':'px-4 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-full transition-colors');
+    const cards=[...document.querySelectorAll('button')].filter(x=>services.some(s=>x.innerText.trim().startsWith(s.name)));
+    cards.forEach(card=>{const label=card.innerText.trim();const s=services.find(x=>label.startsWith(x.name));card.classList.toggle('hidden',!(category==='All Services'||category==='Other'||s.category===category||(category==='Government'&&s.category==='Certificates')));});
+  }));
+
+  // Work list status filters and status updates.
+  const statusButtons=[...document.querySelectorAll('button')].filter(b=>/^(All|Processing|Completed|Pending)\s*\(\d+\)$/.test(b.innerText.trim()));
+  statusButtons.forEach(b=>{
+    const status=b.innerText.trim().match(/^(All|Processing|Completed|Pending)/)[1];
+    b.dataset.workFilter=status;
+    b.addEventListener('click',()=>{
+      statusButtons.forEach(x=>x.className=x===b?'px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-md whitespace-nowrap':'px-3 py-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200 text-xs font-semibold rounded-md whitespace-nowrap');
+      const body=$('todayWorkBody');if(!body)return;
+      const works=read(WORK_KEY).filter(w=>status==='All'||w.status===status);
+      body.innerHTML=works.length?works.slice().reverse().map(w=>`<tr><td class="px-2 py-3 text-xs font-mono text-slate-500">${esc(w.id)}</td><td class="px-2 py-3"><p class="font-medium text-slate-800 text-xs">${esc(w.customer)}</p><p class="text-[10px] text-slate-500">${esc(w.service)}</p></td><td class="px-2 py-3 text-center"><button data-work-status="${esc(w.id)}" class="rounded px-2 py-1 text-[10px] font-semibold bg-slate-100">${esc(w.status)}</button></td></tr>`).join(''):'<tr><td colspan="3" class="px-3 py-8 text-center text-slate-400">No matching work entries.</td></tr>';
+    });
+  });
+  document.addEventListener('change',e=>{
+    const sel=e.target.closest('[data-change-work]');
+    if(sel){const rows=read(WORK_KEY);const w=rows.find(x=>x.id===sel.dataset.changeWork);if(w){w.status=sel.value;write(WORK_KEY,rows);updateStats();notify('Work status updated.');}}
+  });
+  document.addEventListener('click',e=>{
+    const b=e.target.closest('[data-work-status]');
+    if(b){const rows=read(WORK_KEY),w=rows.find(x=>x.id===b.dataset.workStatus);if(!w)return;const states=['Pending','Processing','Completed','Action Required'];w.status=states[(states.indexOf(w.status)+1)%states.length];write(WORK_KEY,rows);updateStats();notify('Status changed to '+w.status+'.');}
+    const service=e.target.closest('[data-service-start]');if(service)workForm(service.dataset.serviceStart);
+    const close=e.target.closest('[data-close-feature]');if(close)closeFeature();
+  });
+
+  // Header search: searches customers and work records, Ctrl+K focuses it.
+  const search=document.querySelector('header input[type="text"]');
+  if(search){
+    search.addEventListener('keydown',e=>{
+      if(e.key!=='Enter')return;
+      const q=search.value.trim().toLowerCase();
+      const customers=(()=>{try{return JSON.parse(localStorage.getItem('digitalBhaiCustomers_v1')||'[]')}catch(_){return[]}})();
+      const matchedC=customers.filter(c=>[c.name,c.mobile,c.email,c.address].some(v=>String(v||'').toLowerCase().includes(q)));
+      const matchedW=read(WORK_KEY).filter(w=>[w.id,w.customer,w.service,w.status].some(v=>String(v||'').toLowerCase().includes(q)));
+      openFeature('Search Results',`Results for “${search.value}”`,`
+        <h3 class="mb-2 font-bold">Customers (${matchedC.length})</h3><div class="mb-5 space-y-2">${matchedC.map(c=>`<div class="rounded-lg border border-slate-200 p-3"><strong>${esc(c.name)}</strong><p class="text-sm text-slate-500">${esc(c.mobile)} · ${esc(c.address||'')}</p></div>`).join('')||'<p class="text-sm text-slate-400">No matching customers.</p>'}</div>
+        <h3 class="mb-2 font-bold">Work (${matchedW.length})</h3><div class="space-y-2">${matchedW.map(w=>`<div class="rounded-lg border border-slate-200 p-3"><strong>${esc(w.id)} · ${esc(w.customer)}</strong><p class="text-sm text-slate-500">${esc(w.service)} — ${esc(w.status)}</p></div>`).join('')||'<p class="text-sm text-slate-400">No matching work records.</p>'}</div>`);
+    });
+    document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();search.focus();}});
+  }
+
+  // Wire official portal quick links; these open external sites in a new tab.
+  document.querySelectorAll('a').forEach(a=>{
+    const label=a.innerText.trim().replace(/\s+/g,' ');
+    if(portalUrls[label]){a.href=portalUrls[label];a.target='_blank';a.rel='noopener noreferrer';}
+  });
+
+  // View All actions open the relevant full module rather than dead '#'.
+  document.querySelectorAll('a').forEach(a=>{
+    if(a.innerText.trim()==='View All'){
+      a.href='#view-all';
+      a.addEventListener('click',e=>{e.preventDefault();workManagement();});
+    }
+  });
+
+  updateStats();
+})();
+</script>
+
 </body>
 </html>
