@@ -425,26 +425,7 @@
                                                 <th class="px-3 py-2 rounded-r-lg">Action</th>
                                             </tr>
                                         </thead>
-                                        <tbody class="divide-y divide-slate-100 text-slate-700">
-                                            <tr>
-                                                <td class="px-3 py-3 font-medium text-slate-800">Rahul Kumar</td>
-                                                <td class="px-3 py-3">9876543210</td>
-                                                <td class="px-3 py-3 text-center">3</td>
-                                                <td class="px-3 py-3"><button class="text-blue-500 hover:text-blue-700"><i class="fa-solid fa-eye"></i></button></td>
-                                            </tr>
-                                            <tr>
-                                                <td class="px-3 py-3 font-medium text-slate-800">Pooja Kumari</td>
-                                                <td class="px-3 py-3">9123456789</td>
-                                                <td class="px-3 py-3 text-center">2</td>
-                                                <td class="px-3 py-3"><button class="text-blue-500 hover:text-blue-700"><i class="fa-solid fa-eye"></i></button></td>
-                                            </tr>
-                                            <tr>
-                                                <td class="px-3 py-3 font-medium text-slate-800">Amit Singh</td>
-                                                <td class="px-3 py-3">8987654321</td>
-                                                <td class="px-3 py-3 text-center">1</td>
-                                                <td class="px-3 py-3"><button class="text-blue-500 hover:text-blue-700"><i class="fa-solid fa-eye"></i></button></td>
-                                            </tr>
-                                        </tbody>
+                                        <tbody id="recentCustomersBody" class="divide-y divide-slate-100 text-slate-700"><tr><td colspan="4" class="px-3 py-6 text-center text-slate-400">No customers added yet.</td></tr></tbody>
                                     </table>
                                 </div>
                             </div>
@@ -678,6 +659,209 @@
             </div>
         </main>
     </div>
+
+
+<!-- Digital Bhai Customer Management: local browser storage version -->
+<div id="dbToast" class="fixed bottom-5 right-5 z-[100] hidden max-w-sm rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white shadow-xl" role="status"></div>
+
+<div id="customerModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/60 p-4">
+  <section class="w-full max-w-2xl rounded-2xl bg-white shadow-2xl">
+    <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+      <div><h2 id="customerModalTitle" class="text-xl font-bold text-slate-900">Add New Customer</h2><p class="mt-1 text-sm text-slate-500">Customer records are saved in this browser.</p></div>
+      <button type="button" id="closeCustomerModal" class="rounded-lg px-3 py-2 text-slate-500 hover:bg-slate-100" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <form id="customerForm" class="space-y-4 p-6">
+      <input type="hidden" id="customerId">
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <label class="block text-sm font-semibold text-slate-700">Full name <span class="text-red-500">*</span><input id="customerName" required maxlength="100" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" placeholder="Enter customer name"></label>
+        <label class="block text-sm font-semibold text-slate-700">Mobile number <span class="text-red-500">*</span><input id="customerMobile" required inputmode="numeric" pattern="[0-9]{10}" maxlength="10" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" placeholder="10-digit mobile"></label>
+        <label class="block text-sm font-semibold text-slate-700">Email (optional)<input id="customerEmail" type="email" maxlength="120" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" placeholder="name@example.com"></label>
+        <label class="block text-sm font-semibold text-slate-700">Address (optional)<input id="customerAddress" maxlength="250" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" placeholder="Village / town"></label>
+      </div>
+      <label class="block text-sm font-semibold text-slate-700">Notes (optional)<textarea id="customerNotes" rows="2" maxlength="500" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 font-normal outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100" placeholder="Any useful customer notes"></textarea></label>
+      <div class="flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
+        <button type="button" id="cancelCustomer" class="rounded-lg bg-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-200">Cancel</button>
+        <button type="submit" class="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"><i class="fa-solid fa-floppy-disk mr-2"></i>Save Customer</button>
+      </div>
+    </form>
+  </section>
+</div>
+
+<div id="customerListModal" class="fixed inset-0 z-40 hidden items-center justify-center bg-slate-950/60 p-4">
+  <section class="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-6 py-4">
+      <div><h2 class="text-xl font-bold text-slate-900">Customer List</h2><p id="customerCount" class="mt-1 text-sm text-slate-500">0 customers</p></div>
+      <div class="flex gap-2">
+        <button type="button" id="addCustomerFromList" class="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700"><i class="fa-solid fa-plus mr-1"></i> Add Customer</button>
+        <button type="button" id="closeCustomerList" class="rounded-lg bg-slate-100 px-3 py-2 text-slate-600 hover:bg-slate-200" aria-label="Close"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+    </div>
+    <div class="border-b border-slate-100 p-4"><input id="customerListSearch" type="search" placeholder="Search by name, mobile, email or address..." class="w-full rounded-lg border border-slate-300 px-4 py-2.5 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"></div>
+    <div class="flex-1 overflow-auto p-4">
+      <table class="w-full min-w-[650px] text-left text-sm">
+        <thead class="sticky top-0 bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th class="px-3 py-3">Customer ID</th><th class="px-3 py-3">Name / Contact</th><th class="px-3 py-3">Address</th><th class="px-3 py-3">Added</th><th class="px-3 py-3 text-right">Actions</th></tr></thead>
+        <tbody id="customerListBody" class="divide-y divide-slate-100"></tbody>
+      </table>
+      <p id="customerListEmpty" class="hidden py-10 text-center text-slate-400">No matching customers found.</p>
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const STORAGE_KEY = 'digitalBhaiCustomers_v1';
+  const $ = (id) => document.getElementById(id);
+  const form = $('customerForm');
+  const formModal = $('customerModal');
+  const listModal = $('customerListModal');
+  let toastTimer;
+
+  function getCustomers() {
+    try {
+      const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+      return Array.isArray(data) ? data : [];
+    } catch (_) { return []; }
+  }
+  function saveCustomers(rows) { localStorage.setItem(STORAGE_KEY, JSON.stringify(rows)); }
+  function safe(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  }
+  function toast(message) {
+    const el = $('dbToast');
+    el.textContent = message;
+    el.classList.remove('hidden');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.add('hidden'), 3000);
+  }
+  function openModal(el) { el.classList.remove('hidden'); el.classList.add('flex'); }
+  function closeModal(el) { el.classList.add('hidden'); el.classList.remove('flex'); }
+  function newCustomer() {
+    form.reset(); $('customerId').value = '';
+    $('customerModalTitle').textContent = 'Add New Customer';
+    openModal(formModal); $('customerName').focus();
+  }
+  function editCustomer(id) {
+    const c = getCustomers().find(x => x.id === id);
+    if (!c) return;
+    $('customerId').value = c.id;
+    $('customerName').value = c.name || '';
+    $('customerMobile').value = c.mobile || '';
+    $('customerEmail').value = c.email || '';
+    $('customerAddress').value = c.address || '';
+    $('customerNotes').value = c.notes || '';
+    $('customerModalTitle').textContent = 'Edit Customer';
+    openModal(formModal); $('customerName').focus();
+  }
+  function renderRecent() {
+    const body = $('recentCustomersBody');
+    if (!body) return;
+    const rows = getCustomers().slice().reverse().slice(0, 5);
+    body.innerHTML = rows.length ? rows.map(c => `<tr>
+      <td class="px-3 py-3 font-medium text-slate-800">${safe(c.name)}</td>
+      <td class="px-3 py-3">${safe(c.mobile)}</td>
+      <td class="px-3 py-3 text-center">${Number(c.visits || 1)}</td>
+      <td class="px-3 py-3"><button type="button" data-customer-view="${safe(c.id)}" class="text-blue-500 hover:text-blue-700" title="View customer"><i class="fa-solid fa-eye"></i></button></td>
+    </tr>`).join('') : '<tr><td colspan="4" class="px-3 py-6 text-center text-slate-400">No customers added yet. Use “New Customer” to add one.</td></tr>';
+  }
+  function renderList(query = '') {
+    const body = $('customerListBody');
+    const q = query.trim().toLowerCase();
+    const rows = getCustomers().filter(c => [c.id,c.name,c.mobile,c.email,c.address].some(v => String(v || '').toLowerCase().includes(q))).slice().reverse();
+    $('customerCount').textContent = `${getCustomers().length} customer${getCustomers().length === 1 ? '' : 's'}`;
+    $('customerListEmpty').classList.toggle('hidden', rows.length > 0);
+    body.innerHTML = rows.map(c => `<tr>
+      <td class="px-3 py-3 font-mono text-xs text-slate-500">${safe(c.id)}</td>
+      <td class="px-3 py-3"><div class="font-semibold text-slate-800">${safe(c.name)}</div><div class="text-xs text-slate-500">${safe(c.mobile)}${c.email ? ' · ' + safe(c.email) : ''}</div></td>
+      <td class="px-3 py-3">${safe(c.address || '—')}</td>
+      <td class="px-3 py-3 text-xs text-slate-500">${safe(c.createdAt || '—')}</td>
+      <td class="px-3 py-3 text-right whitespace-nowrap">
+        <button type="button" data-customer-edit="${safe(c.id)}" class="mr-2 rounded-md px-2 py-1 text-blue-600 hover:bg-blue-50" title="Edit"><i class="fa-solid fa-pen"></i></button>
+        <button type="button" data-customer-delete="${safe(c.id)}" class="rounded-md px-2 py-1 text-red-600 hover:bg-red-50" title="Delete"><i class="fa-solid fa-trash"></i></button>
+      </td>
+    </tr>`).join('');
+  }
+  function openList() { renderList($('customerListSearch').value); openModal(listModal); }
+
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    const rows = getCustomers();
+    const id = $('customerId').value;
+    const name = $('customerName').value.trim();
+    const mobile = $('customerMobile').value.trim();
+    if (!name || !/^[0-9]{10}$/.test(mobile)) {
+      toast('Enter customer name and a valid 10-digit mobile number.');
+      return;
+    }
+    const duplicate = rows.find(c => c.mobile === mobile && c.id !== id);
+    if (duplicate) { toast('This mobile number already exists in the customer list.'); return; }
+    const old = rows.find(c => c.id === id);
+    const record = {
+      id: id || `DB-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`,
+      name, mobile, email: $('customerEmail').value.trim(),
+      address: $('customerAddress').value.trim(), notes: $('customerNotes').value.trim(),
+      createdAt: old ? old.createdAt : new Date().toLocaleDateString('en-IN'),
+      visits: old ? (old.visits || 1) : 1
+    };
+    if (old) saveCustomers(rows.map(c => c.id === id ? record : c));
+    else saveCustomers([...rows, record]);
+    closeModal(formModal); renderRecent(); renderList($('customerListSearch').value);
+    toast(old ? 'Customer updated successfully.' : 'Customer saved successfully.');
+  });
+
+  $('closeCustomerModal').addEventListener('click', () => closeModal(formModal));
+  $('cancelCustomer').addEventListener('click', () => closeModal(formModal));
+  $('closeCustomerList').addEventListener('click', () => closeModal(listModal));
+  $('addCustomerFromList').addEventListener('click', newCustomer);
+  $('customerListSearch').addEventListener('input', e => renderList(e.target.value));
+
+  document.addEventListener('click', event => {
+    const edit = event.target.closest('[data-customer-edit]');
+    const del = event.target.closest('[data-customer-delete]');
+    const view = event.target.closest('[data-customer-view]');
+    if (edit) editCustomer(edit.dataset.customerEdit);
+    if (del) {
+      const id = del.dataset.customerDelete;
+      const customer = getCustomers().find(c => c.id === id);
+      if (customer && confirm(`Delete customer "${customer.name}"? This cannot be undone.`)) {
+        saveCustomers(getCustomers().filter(c => c.id !== id));
+        renderList($('customerListSearch').value); renderRecent(); toast('Customer deleted.');
+      }
+    }
+    if (view) { openList(); $('customerListSearch').value = view.dataset.customerView; renderList(view.dataset.customerView); }
+  });
+
+  // Activate the two customer navigation options without changing the dashboard layout.
+  document.querySelectorAll('aside a').forEach(a => {
+    const label = a.innerText.trim().replace(/\s+/g, ' ');
+    if (label === 'New Customer') {
+      a.href = '#new-customer';
+      a.addEventListener('click', e => { e.preventDefault(); newCustomer(); });
+    } else if (label === 'Customer List') {
+      a.href = '#customer-list';
+      a.addEventListener('click', e => { e.preventDefault(); openList(); });
+    }
+  });
+
+  // The dashboard's top search opens the customer list and filters it when a query is entered.
+  const globalSearch = document.querySelector('header input[type="text"]');
+  if (globalSearch) {
+    globalSearch.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); $('customerListSearch').value = globalSearch.value; openList(); renderList(globalSearch.value); }
+    });
+    document.addEventListener('keydown', e => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); globalSearch.focus(); }
+      if (e.key === 'Escape') { closeModal(formModal); closeModal(listModal); }
+    });
+  }
+
+  // Add a visible entry point from the dashboard.
+  document.querySelectorAll('button').forEach(btn => {
+    if (btn.textContent.trim().replace(/\s+/g, ' ') === 'Quick Entry') btn.addEventListener('click', newCustomer);
+  });
+  renderRecent();
+})();
+</script>
 
 </body>
 </html>
